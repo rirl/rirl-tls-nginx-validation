@@ -1,0 +1,11 @@
+tls_hostname     = "atreides.lan.rirl.dev"
+certbot_state_dir = "~/.local/share/rirl-lan-tls/letsencrypt"
+
+https_host_ip   = "127.0.0.1"
+https_host_port = 18443
+
+container_name = "rirl-tls-validation-nginx"
+network_name   = "rirl-tls-validation"
+
+certificate_warning_days = 30
+status_refresh_seconds    = 300

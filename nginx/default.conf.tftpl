@@ -1,0 +1,24 @@
+server {
+    listen 443 ssl;
+    server_name ${tls_hostname};
+
+    ssl_certificate     /etc/letsencrypt/live/${tls_hostname}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${tls_hostname}/privkey.pem;
+
+    ssl_protocols TLSv1.2 TLSv1.3;
+
+    location = /healthz {
+        default_type text/plain;
+        alias /run/cert-status/healthz;
+    }
+
+    location = /status {
+        default_type application/json;
+        alias /run/cert-status/status.json;
+    }
+
+    location / {
+        default_type text/plain;
+        return 200 "rirl.dev TLS validation OK\n";
+    }
+}
