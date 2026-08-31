@@ -2,7 +2,22 @@
 
 set -Eeuo pipefail
 
-CONTAINER_NAME="${CONTAINER_NAME:-rirl-tls-validation-nginx}"
+RUNTIME_CONFIG="${RUNTIME_CONFIG:-$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)/generated/runtime.env}"
+
+if [[ ! -r "${RUNTIME_CONFIG}" ]]; then
+    printf 'ERROR: runtime configuration not found: %s\n' "${RUNTIME_CONFIG}" >&2
+    printf 'ERROR: run terraform apply before using this script.\n' >&2
+    exit 1
+fi
+
+CONTAINER_NAME_OVERRIDE="${CONTAINER_NAME-}"
+
+# shellcheck source=/dev/null
+source "${RUNTIME_CONFIG}"
+
+[[ -n "${CONTAINER_NAME_OVERRIDE}" ]] && CONTAINER_NAME="${CONTAINER_NAME_OVERRIDE}"
+
+: "${CONTAINER_NAME:?CONTAINER_NAME is not set}"
 
 if ! command -v docker >/dev/null 2>&1; then
     printf 'ERROR: required command not found: docker\n' >&2
