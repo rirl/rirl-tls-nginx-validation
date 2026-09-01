@@ -25,6 +25,19 @@ case "${1-}" in
         case "${1-}" in
             openssl)
                 cat "${MOCK_STATE_DIR}/desired-fingerprint"
+                desired_reads=0
+                if [[ -r "${MOCK_STATE_DIR}/desired-read-count" ]]; then
+                    read -r desired_reads <"${MOCK_STATE_DIR}/desired-read-count"
+                fi
+                ((desired_reads += 1))
+                printf '%d\n' "${desired_reads}" \
+                    >"${MOCK_STATE_DIR}/desired-read-count"
+
+                if ((MOCK_ROTATE_DESIRED_AFTER_READ == desired_reads)); then
+                    cp \
+                        "${MOCK_STATE_DIR}/rotated-desired-fingerprint" \
+                        "${MOCK_STATE_DIR}/desired-fingerprint"
+                fi
                 exit "${MOCK_DESIRED_STATUS}"
                 ;;
             nginx)

@@ -35,10 +35,12 @@ setup() {
     export MOCK_NGINX_RELOAD_STATUS=0
     export MOCK_RELOAD_CONVERGES=1
     export MOCK_FLOCK_STATUS=0
+    export MOCK_ROTATE_DESIRED_AFTER_READ=0
 
     write_runtime_config
     set_desired_fingerprint "${FINGERPRINT_A}"
     set_served_fingerprint "${FINGERPRINT_A}"
+    printf '0\n' >"${MOCK_STATE_DIR}/desired-read-count"
 }
 
 write_runtime_config() {
@@ -56,6 +58,15 @@ set_desired_fingerprint() {
 
 set_served_fingerprint() {
     printf 'SHA256 Fingerprint=%s\n' "$1" >"${MOCK_STATE_DIR}/served-fingerprint"
+}
+
+rotate_desired_after_read() {
+    local read_number="$1"
+    local fingerprint="$2"
+
+    printf 'SHA256 Fingerprint=%s\n' "${fingerprint}" \
+        >"${MOCK_STATE_DIR}/rotated-desired-fingerprint"
+    export MOCK_ROTATE_DESIRED_AFTER_READ="${read_number}"
 }
 
 action_count() {
@@ -215,6 +226,19 @@ action_count() {
     [[ "$(action_count nginx-test)" -eq 1 ]]
     [[ "$(action_count nginx-reload)" -eq 1 ]]
     [[ "$(action_count cert-status)" -eq 1 ]]
+}
+
+@test "desired rotation during observation cannot produce false convergence" {
+    rotate_desired_after_read 1 "${FINGERPRINT_B}"
+
+    run "${RECONCILE}"
+
+    [[ "${status}" -eq 0 ]]
+    [[ "${output}" == *'Desired certificate changed during observation'* ]]
+    [[ "${output}" == *'Mismatch detected'* ]]
+    [[ "${output}" == *'Reload verified'* ]]
+    [[ "$(action_count nginx-reload)" -eq 1 ]]
+    grep -q "${FINGERPRINT_B}" "${MOCK_STATE_DIR}/served-fingerprint"
 }
 
 @test "invalid nginx configuration returns 1 without reload" {

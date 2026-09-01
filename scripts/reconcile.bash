@@ -32,6 +32,7 @@ readonly LOCK_FILE="${RECONCILE_LOCK_FILE:-/tmp/rirl-tls-nginx-validation.reconc
 readonly POST_RELOAD_RETRIES="${RECONCILE_POST_RELOAD_RETRIES:-5}"
 readonly POST_RELOAD_RETRY_DELAY_SECONDS="${RECONCILE_POST_RELOAD_RETRY_DELAY_SECONDS:-1}"
 readonly PROBE_TIMEOUT_SECONDS="${RECONCILE_PROBE_TIMEOUT_SECONDS:-5}"
+readonly OBSERVATION_RETRIES="${RECONCILE_OBSERVATION_RETRIES:-3}"
 
 usage() {
     cat <<USAGE
@@ -183,25 +184,54 @@ served_fingerprint() {
 # --- reconciliation body -------------------------------------------------
 
 reconcile() {
-    local desired served
+    local desired desired_before desired_after served
+    local attempt
 
-    if ! desired="$(desired_fingerprint)"; then
-        printf 'ERROR: could not read desired certificate from %s inside %s\n' \
-            "${DESIRED_CERT_PATH}" "${CONTAINER_NAME}" >&2
-        return 1
-    fi
+    for ((attempt = 1; attempt <= OBSERVATION_RETRIES; attempt++)); do
+        if ! desired_before="$(desired_fingerprint)"; then
+            printf 'ERROR: could not read desired certificate from %s inside %s\n' \
+                "${DESIRED_CERT_PATH}" "${CONTAINER_NAME}" >&2
+            return 1
+        fi
 
-    if ! served="$(served_fingerprint)"; then
-        printf 'ERROR: could not obtain served certificate via TLS probe to %s:%s (SNI %s)\n' \
-            "${HTTPS_HOST_IP}" "${HTTPS_HOST_PORT}" "${TLS_HOSTNAME}" >&2
-        return 1
-    fi
+        if ! served="$(served_fingerprint)"; then
+            printf 'ERROR: could not obtain served certificate via TLS probe to %s:%s (SNI %s)\n' \
+                "${HTTPS_HOST_IP}" "${HTTPS_HOST_PORT}" "${TLS_HOSTNAME}" >&2
+            return 1
+        fi
 
-    if [[ "${desired}" == "${served}" ]]; then
-        printf 'Already converged: served certificate matches desired (sha256:%s). No reload performed.\n' \
-            "${desired}"
-        return 0
-    fi
+        if ! desired_after="$(desired_fingerprint)"; then
+            printf 'ERROR: could not re-read desired certificate from %s inside %s\n' \
+                "${DESIRED_CERT_PATH}" "${CONTAINER_NAME}" >&2
+            return 1
+        fi
+
+        if [[ "${desired_before}" == "${served}" &&
+            "${desired_after}" == "${served}" ]]; then
+            printf 'Already converged: served certificate matches stable desired state (sha256:%s). No reload performed.\n' \
+                "${desired_after}"
+            return 0
+        fi
+
+        if [[ "${desired_before}" != "${desired_after}" ]]; then
+            printf 'Desired certificate changed during observation: before=sha256:%s after=sha256:%s\n' \
+                "${desired_before}" "${desired_after}"
+
+            if [[ "${desired_after}" == "${served}" ]]; then
+                if ((attempt < OBSERVATION_RETRIES)); then
+                    sleep "${POST_RELOAD_RETRY_DELAY_SECONDS}"
+                    continue
+                fi
+
+                printf 'ERROR: desired certificate did not stabilize after %d observations\n' \
+                    "${OBSERVATION_RETRIES}" >&2
+                return 1
+            fi
+        fi
+
+        desired="${desired_after}"
+        break
+    done
 
     printf 'Mismatch detected: desired=sha256:%s served=sha256:%s\n' "${desired}" "${served}"
 
@@ -223,18 +253,23 @@ reconcile() {
     # nothing. Retry briefly — a reload is not necessarily instantaneous
     # from the perspective of a new TLS handshake against draining/
     # starting workers.
-    local attempt
     for ((attempt = 1; attempt <= POST_RELOAD_RETRIES; attempt++)); do
-        if ! desired="$(desired_fingerprint)"; then
-            desired=''
+        if ! desired_before="$(desired_fingerprint)"; then
+            desired_before=''
         fi
         if ! served="$(served_fingerprint)"; then
             served=''
         fi
+        if ! desired_after="$(desired_fingerprint)"; then
+            desired_after=''
+        fi
 
-        if [[ -n "${desired}" && -n "${served}" && "${desired}" == "${served}" ]]; then
-            printf 'Reload verified: served certificate now matches desired (sha256:%s).\n' \
-                "${desired}"
+        if [[ -n "${desired_before}" &&
+            -n "${served}" &&
+            "${desired_before}" == "${served}" &&
+            "${desired_after}" == "${served}" ]]; then
+            printf 'Reload verified: served certificate now matches stable desired state (sha256:%s).\n' \
+                "${desired_after}"
             docker exec "${CONTAINER_NAME}" /usr/local/bin/cert-status --once >/dev/null 2>&1 || true
             return 0
         fi
@@ -246,7 +281,7 @@ reconcile() {
 
     printf 'ERROR: reload completed but served certificate still does not match desired\n' >&2
     printf 'ERROR: desired=sha256:%s served=sha256:%s (after %d attempts)\n' \
-        "${desired:-unknown}" "${served:-unknown}" "${POST_RELOAD_RETRIES}" >&2
+        "${desired_after:-unknown}" "${served:-unknown}" "${POST_RELOAD_RETRIES}" >&2
     return 1
 }
 
