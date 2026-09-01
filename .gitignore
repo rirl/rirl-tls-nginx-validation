@@ -14,3 +14,4 @@ secrets/
 .DS_Store
 Thumbs.db
 generated/
+test-results/

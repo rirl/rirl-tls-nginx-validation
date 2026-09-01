@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+
+set -u
+
+printf '%s\n' "$*" >>"${MOCK_DOCKER_LOG}"
+
+case "${1-}" in
+    inspect)
+        if [[ " $* " == *' --format '* ]]; then
+            if ((MOCK_STATE_INSPECT_STATUS != 0)); then
+                exit "${MOCK_STATE_INSPECT_STATUS}"
+            fi
+            printf '%s\n' "${MOCK_CONTAINER_RUNNING}"
+            exit 0
+        fi
+        exit "${MOCK_INSPECT_STATUS}"
+        ;;
+    exec)
+        shift
+        while [[ "${1-}" == '--env' ]]; do
+            shift 2
+        done
+
+        shift
+        case "${1-}" in
+            openssl)
+                cat "${MOCK_STATE_DIR}/desired-fingerprint"
+                exit "${MOCK_DESIRED_STATUS}"
+                ;;
+            nginx)
+                case "${2-}" in
+                    -t)
+                        printf '%s\n' 'nginx-test' >>"${MOCK_ACTION_LOG}"
+                        exit "${MOCK_NGINX_TEST_STATUS}"
+                        ;;
+                    -s)
+                        if [[ "${3-}" == 'reload' ]]; then
+                            printf '%s\n' 'nginx-reload' >>"${MOCK_ACTION_LOG}"
+                            if ((MOCK_NGINX_RELOAD_STATUS == 0)) &&
+                                ((MOCK_RELOAD_CONVERGES == 1)); then
+                                cp \
+                                    "${MOCK_STATE_DIR}/desired-fingerprint" \
+                                    "${MOCK_STATE_DIR}/served-fingerprint"
+                            fi
+                            exit "${MOCK_NGINX_RELOAD_STATUS}"
+                        fi
+                        ;;
+                esac
+                ;;
+            /usr/local/bin/cert-status)
+                printf '%s\n' 'cert-status' >>"${MOCK_ACTION_LOG}"
+                exit 0
+                ;;
+        esac
+        ;;
+esac
+
+exit 0
