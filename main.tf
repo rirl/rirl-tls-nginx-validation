@@ -17,7 +17,7 @@ resource "docker_image" "validation" {
 resource "docker_container" "nginx_tls_validation" {
   name    = var.container_name
   image   = docker_image.validation.image_id
-  restart = "no"
+  restart = "unless-stopped"
 
   networks_advanced {
     name = docker_network.validation.name
