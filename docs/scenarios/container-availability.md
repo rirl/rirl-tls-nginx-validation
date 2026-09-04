@@ -94,8 +94,8 @@ sudo systemctl restart docker
 ```
 
 Then verify the validation container returns automatically and becomes healthy.
-
-No Terraform reconciliation or manual `docker start` should be required.
+For this Docker daemon restart scenario, no Terraform reconciliation or manual
+`docker start` should be required.
 
 ## Scenario: host reboot
 
