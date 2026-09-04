@@ -170,6 +170,12 @@ The validated reconciliation suite covers the already-converged path,
 mismatch/reload/convergence, repeated invocation, invalid nginx configuration,
 TLS probe failure, and concurrent reconciliation with serialized reload.
 
+Reproducible operational scenarios are documented under:
+
+```text
+docs/scenarios/
+```
+
 See:
 
 ```text
@@ -201,13 +207,23 @@ a description of the current implementation.
 
 ## Separate availability concern
 
-The current Terraform restart policy remains:
+The current Terraform restart policy is:
 
 ```text
-restart = "no"
+restart = "unless-stopped"
 ```
 
-Container availability and restart behavior are intentionally treated as a
-separate operational concern from RECONCILE correctness. Changing restart
-policy should be evaluated independently rather than folded into the
-reconciliation contract.
+Container availability and restart behavior remain intentionally separate from
+RECONCILE correctness.
+
+Reproducible availability scenarios:
+
+```text
+docs/scenarios/container-availability.md
+```
+
+Completed live validation:
+
+```text
+docs/validation/container-availability.md
+```
