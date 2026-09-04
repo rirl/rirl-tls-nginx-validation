@@ -224,6 +224,22 @@ current-state defects.
 Consumer availability is related to, but distinct from, reconciliation
 correctness.
 
-The current Docker restart policy remains `no`. Whether to change that policy,
-for example to `unless-stopped`, should be handled as a separate availability
-decision.
+The current Docker restart policy is:
+
+```text
+unless-stopped
+```
+
+This policy provides runtime recovery from unexpected workload termination,
+Docker daemon restart, and host reboot while preserving an explicit operator
+stop.
+
+The availability behavior is validated separately from the RECONCILE
+correctness contract.
+
+See:
+
+```text
+docs/scenarios/container-availability.md
+docs/validation/container-availability.md
+```
