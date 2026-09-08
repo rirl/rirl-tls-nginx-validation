@@ -226,6 +226,7 @@ results_dir="${repo_root}/test-results/integration"
 mkdir -p "${results_dir}"
 socket_gid="$(stat -c '%g' /var/run/docker.sock)"
 
+set +e
 docker run \
     --rm \
     --network host \
@@ -246,4 +247,21 @@ docker run \
     --formatter tap \
     --report-formatter junit \
     --output /test-results \
-    tests/integration/reconcile-live.bats
+    --print-output-on-failure \
+    tests/integration/reconcile-live.bats \
+    | tee "${results_dir}/report.tap"
+pipeline_status=("${PIPESTATUS[@]}")
+set -e
+
+bats_status="${pipeline_status[0]}"
+tee_status="${pipeline_status[1]}"
+
+if ((bats_status != 0)); then
+    exit "${bats_status}"
+fi
+
+if ((tee_status != 0)); then
+    printf 'ERROR: could not write TAP report: %s\n' \
+        "${results_dir}/report.tap" >&2
+    exit "${tee_status}"
+fi
