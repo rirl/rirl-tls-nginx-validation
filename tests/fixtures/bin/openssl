@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+
+set -u
+
+printf '%s\n' "$*" >>"${MOCK_OPENSSL_LOG}"
+
+case "${1-}" in
+    s_client)
+        printf '%s\n' 'parseable-certificate'
+        exit "${MOCK_S_CLIENT_STATUS}"
+        ;;
+    x509)
+        cat >/dev/null
+        cat "${MOCK_STATE_DIR}/served-fingerprint"
+        exit "${MOCK_SERVED_X509_STATUS}"
+        ;;
+esac
+
+exit 0

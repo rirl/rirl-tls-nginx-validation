@@ -1,0 +1,29 @@
+= RECONCILE live integration tests
+
+This suite complements the mocked contract tests in `tests/reconcile.bats`.
+It exercises the real Docker CLI, nginx configuration validation and reload,
+OpenSSL TLS probing, certificate rotation, and `flock` serialization.
+
+Run it explicitly from the repository root:
+
+[source,bash]
+----
+./tests/integration/run.bash --live
+----
+
+The runner:
+
+* builds a purpose-specific Bats image;
+* creates an ephemeral local CA and two short-lived leaf certificates;
+* starts a uniquely named disposable nginx container on a dynamically assigned
+  loopback port;
+* mounts the repository read-only into the Bats container;
+* mounts `/var/run/docker.sock` so RECONCILE can execute real Docker commands;
+* writes JUnit output to `test-results/integration/report.xml`;
+* removes the disposable container and certificate fixtures on exit.
+
+The suite does not read, copy, or modify the authoritative Certbot lineage.
+
+WARNING: Access to the Docker socket grants broad control over the Docker
+daemon. Run this suite only from trusted source on a trusted development host.
+It must not run automatically for untrusted pull requests.

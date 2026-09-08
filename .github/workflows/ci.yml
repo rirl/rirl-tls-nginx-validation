@@ -1,0 +1,181 @@
+name: CI
+
+on:
+  pull_request:
+    branches:
+      - development
+      - main
+  push:
+    branches:
+      - development
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  static:
+    name: CI / Static
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Bash syntax
+        run: |
+          bash -n \
+            scripts/*.bash \
+            tests/run.bash \
+            tests/integration/run.bash
+
+      - name: ShellCheck
+        run: |
+          shellcheck \
+            scripts/*.bash \
+            tests/run.bash \
+            tests/integration/run.bash
+
+  unit-contract:
+    name: CI / Unit & Contract
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Run unit and contract tests
+        id: tests
+        run: ./tests/run.bash
+
+      - name: Write test summary
+        if: always()
+        env:
+          TEST_OUTCOME: ${{ steps.tests.outcome }}
+          TAP_FILE: test-results/unit/report.tap
+          REPORT_ARTIFACT: unit-contract-reports
+        run: |
+          python3 - <<'PY'
+          import os
+          import re
+          from pathlib import Path
+
+          outcome = os.environ.get("TEST_OUTCOME", "unknown")
+          tap_path = Path(os.environ["TAP_FILE"])
+          artifact = os.environ["REPORT_ARTIFACT"]
+          icon = "✅" if outcome == "success" else "❌"
+          rows = []
+          if tap_path.exists():
+              pattern = re.compile(r"^(ok|not ok)\s+\d+\s+(.+?)(?:\s+#\s+in\s+(.+))?$")
+              for line in tap_path.read_text(encoding="utf-8", errors="replace").splitlines():
+                  match = pattern.match(line)
+                  if not match:
+                      continue
+                  result, name, duration = match.groups()
+                  rows.append((result, name, duration or ""))
+
+          passed = sum(result == "ok" for result, _, _ in rows)
+          failed = sum(result == "not ok" for result, _, _ in rows)
+
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
+              summary.write("## Unit & Contract Tests\n\n")
+              summary.write(f"{icon} **{outcome.upper()}** — {passed} passed, {failed} failed\n\n")
+              if rows:
+                  summary.write("| Result | Behavioral contract | Duration |\n")
+                  summary.write("| --- | --- | ---: |\n")
+                  for result, name, duration in rows:
+                      mark = "✅" if result == "ok" else "❌"
+                      safe_name = name.replace("|", r"\|")
+                      safe_duration = duration.replace("|", r"\|")
+                      summary.write(f"| {mark} | {safe_name} | {safe_duration} |\n")
+              else:
+                  summary.write("_No TAP report was available._\n")
+              summary.write(f"\nJUnit XML and raw TAP are retained in artifact `{artifact}`.\n")
+          PY
+
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: unit-contract-reports
+          path: test-results/unit/
+          if-no-files-found: warn
+          retention-days: 14
+
+  live-integration:
+    name: CI / Live Integration
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Build validation target image
+        run: docker build --tag rirl-tls-nginx-validation:local --file docker/Dockerfile .
+
+      - name: Run trusted live integration tests
+        id: tests
+        run: ./tests/integration/run.bash --live
+
+      - name: Write test summary
+        if: always()
+        env:
+          TEST_OUTCOME: ${{ steps.tests.outcome }}
+          TAP_FILE: test-results/integration/report.tap
+          REPORT_ARTIFACT: live-integration-reports
+        run: |
+          python3 - <<'PY'
+          import os
+          import re
+          from pathlib import Path
+
+          outcome = os.environ.get("TEST_OUTCOME", "unknown")
+          tap_path = Path(os.environ["TAP_FILE"])
+          artifact = os.environ["REPORT_ARTIFACT"]
+          icon = "✅" if outcome == "success" else "❌"
+          rows = []
+          if tap_path.exists():
+              pattern = re.compile(r"^(ok|not ok)\s+\d+\s+(.+?)(?:\s+#\s+in\s+(.+))?$")
+              for line in tap_path.read_text(encoding="utf-8", errors="replace").splitlines():
+                  match = pattern.match(line)
+                  if not match:
+                      continue
+                  result, name, duration = match.groups()
+                  rows.append((result, name, duration or ""))
+
+          passed = sum(result == "ok" for result, _, _ in rows)
+          failed = sum(result == "not ok" for result, _, _ in rows)
+
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
+              summary.write("## Live Integration Tests\n\n")
+              summary.write(f"{icon} **{outcome.upper()}** — {passed} passed, {failed} failed\n\n")
+              if rows:
+                  summary.write("| Result | Behavioral contract | Duration |\n")
+                  summary.write("| --- | --- | ---: |\n")
+                  for result, name, duration in rows:
+                      mark = "✅" if result == "ok" else "❌"
+                      safe_name = name.replace("|", r"\|")
+                      safe_duration = duration.replace("|", r"\|")
+                      summary.write(f"| {mark} | {safe_name} | {safe_duration} |\n")
+              else:
+                  summary.write("_No TAP report was available._\n")
+              summary.write(f"\nJUnit XML and raw TAP are retained in artifact `{artifact}`.\n")
+          PY
+
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: live-integration-reports
+          path: test-results/integration/
+          if-no-files-found: warn
+          retention-days: 14

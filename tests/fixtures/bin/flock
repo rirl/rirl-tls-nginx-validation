@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+
+exit "${MOCK_FLOCK_STATUS:-0}"
